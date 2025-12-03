@@ -62,6 +62,7 @@ def _attn_fwd(
         lo, hi = tl.maximum(start_q, start_q + start_m * BLOCK_M - BANDWIDTH), start_q + (start_m + 1) * BLOCK_M
     else:
         lo, hi = start_q, start_q + (start_m + 1) * BLOCK_M
+    hi = tl.minimum(hi, N_KV_CTX)
 
     for start_n in range(lo, hi, BLOCK_N):
         start_n = tl.multiple_of(start_n, BLOCK_N)
@@ -181,6 +182,7 @@ def attention_ref(
     pos_keys = torch.arange(num_keys, device=query.device)
     pos_queries = torch.arange(num_queries, device=query.device) + start_q
     mask = pos_keys[None, :] > pos_queries[:, None]
+    mask = mask | (pos_keys[None, :] < start_q)
     mask = mask.float().masked_fill(mask, float("-inf"))
 
     if sliding_window:
@@ -211,7 +213,7 @@ def attention_ref(
 @pytest.mark.parametrize("head_dim", [64])
 @pytest.mark.parametrize("sm_scale", [0.125])
 @pytest.mark.parametrize("sliding_window", [None, 128])
-@pytest.mark.parametrize("start_q", [0, 5])
+@pytest.mark.parametrize("start_q", [0, 64])
 def test_eq(batch_size, num_queries, num_keys, num_key_value_heads, num_key_value_groups, head_dim, sm_scale, sliding_window, start_q):
     if num_queries > num_keys:
         pytest.skip("too many queries")
